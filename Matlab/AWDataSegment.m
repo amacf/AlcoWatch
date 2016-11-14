@@ -122,6 +122,19 @@ classdef AWDataSegment
                 end
             end
         end
+        function loc = getStepLocations(obj)
+            pks = findpeaks(obj.gcmA);
+            average = mean(obj.gcmA(:));
+            stdev = std(obj.gcmA);
+            max = average + stdev;
+            min = average - stdev;
+            loc = []
+            for i = 1:length(pks)
+                if pks(i) > max | pks(i) < min
+                    loc = [loc pks(i)];
+                end
+            end
+        end
         function cadence = getCadence(obj)
             numSteps = obj.getNumSteps;
             cTime = obj.correctTimeSeconds.time;
@@ -161,6 +174,106 @@ classdef AWDataSegment
             seg = obj.correctTimeSeconds;
             plot(seg.time,seg.gcmG);
         end
+        function sl = getStepLength(obj)
+            % Calibrated to 5 seconds of walking in Olin Hall bottom floor
+            % IN METERS
+            segDistance = 5;
+            steps = obj.getNumSteps;
+            sl = segDistance / steps;
+        end
+        function gv = getGaitVelocity(obj)
+            stepLength = obj.getStepLength;
+            cadence = obj.getCadence;
+            gv = cadence / stepLength;
+        end
+        function rsl = getResidualStepLength(obj)
+            asl = obj.getStepLength;
+            v = obj.getGaitVelocity;
+            l = obj.getStepLocations;
+
+            timeOfStep = [obj.time(l(1))];
+            stepLength = v*(timeOfStep(1) - 0);
+            stepLengthArray = [stepLength];
+
+            for i=2:s
+                timeOfStep = [timeOfStep obj.time(l(i))];
+                stepLength = v*(timeOfStep(i) - timeOfStep(i-1));
+                stepLengthArray = [stepLengthArray stepLength];
+
+            end
+
+            residual = asl - stepLengthArray(1);
+
+            for j=2:s
+                difference = asl - stepLengthArray(j);
+                residual = [residual difference];
+            end
+
+            rsl = sum(residual);
+        end
+        function r = getRatio(obj)
+            sp = spectralPeaks(obj.x,obj.y,obj.z);
+            sp = sp(1:floor(end/2));
+
+            numSP = length(sp);
+
+            totalSP = sum(sp);
+
+            high = [];
+            low = [];
+
+            for i=1:numSP
+                if(sp(i) < (mean(sp)))
+                    low = [low sp(i)];
+                elseif (sp(i) > (mean(sp)))
+                    high = [high sp(i)];
+                end
+            end
+
+            r = sum(low)./sum(high);
+        end
+        function rst = getResidualStepTime(obj)
+            s = obj.getNumSteps;
+            l = obj.getStepLocations;
+            timeOfStep = [obj.time(l(1))];
+            stepTime = timeOfStep(1) - 0;
+            stepTimeArray = [stepTime];
+
+            for i=2:s
+                timeOfStep = [timeOfStep obj.time(l(i))];
+                stepTime = timeOfStep(i) - timeOfStep(i-1);
+                stepTimeArray = [stepTimeArray stepTime];
+
+            end
+
+            totalTime = sum(stepTimeArray);
+
+            as = s/totalTime;
+
+            residual = as - stepTimeArray(1);
+
+            for j=2:s
+                difference = as - stepTimeArray(j);
+                residual = [residual difference];
+            end
+
+            rst = sum(residual);
+        end
+        function bp = getBandpower(obj)
+            mag = ((obj.x).^2+(obj.y).^2+(obj.z).^2);
+            magNoG = mag - mean(mag);
+            bp = bandpower(magNoG);
+        end
+        function sn = getSignalNoiseRatio(obj)
+            mag = ((obj.x).^2+(obj.y).^2+(obj.z).^2);
+            magNoG = mag - mean(mag);
+            sn = snr(magNoG);
+        end
+        function td = getTotalHarmonicDistortion(obj)
+            mag = ((obj.x).^2+(obj.y).^2+(obj.z).^2);
+            magNoG = mag - mean(mag);
+            td = thd(magNoG);
+        end
         function fullFile = outputArff(obj)
             [fileName, pathName] = uiputfile({'.arff'});
             fullFile = fullfile(pathName,fileName);
@@ -170,6 +283,13 @@ classdef AWDataSegment
             fprintf(fileID, '@attribute cadence numeric\n');
             fprintf(fileID, '@attribute skew numeric\n');
             fprintf(fileID, '@attribute kurtosis numeric\n');
+            fprintf(fileID, '@attribute gaitVelocity numeric\n');
+            fprintf(fileID, '@attribute residualStepLength numeric\n');
+            fprintf(fileID, '@attribute ratio numeric\n');
+            fprintf(fileID, '@attribute residualStepTime numeric\n');
+            fprintf(fileID, '@attribute bandpower numeric\n');
+            fprintf(fileID, '@attribute signalNoiseRatio numeric\n');
+            fprintf(fileID, '@attribute totalHarmonicDistortion numeric\n');
             fprintf(fileID, '@attribute xzSwayArea numeric\n');
             fprintf(fileID, '@attribute xySwayArea numeric\n');
             fprintf(fileID, '@attribute yzSwayArea numeric\n');
@@ -183,7 +303,7 @@ classdef AWDataSegment
         function writeDataToArff(obj, fullFile)
             fileID = fopen(fullFile, 'a');
             [skew, kurt] = obj.getSkewAndKurt
-            fprintf(fileID,'%d,%f,%f,%f,%f,%f,%f,%f',[obj.getNumSteps, obj.getCadence, skew, kurt, obj.getXZSwayArea, obj.getXYSwayArea, obj.getYZSwayArea, obj.getSwayVolume]);
+            fprintf(fileID,'%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f',[obj.getNumSteps, obj.getCadence, skew, kurt, obj.gaitVelocity, obj.getResidualStepLength,obj.getRatio,obj.getResidualStepTime,obj.getBandpower, obj.getSignalNoiseRatio, obj.getTotalHarmonicDistortion, obj.getXZSwayArea, obj.getXYSwayArea, obj.getYZSwayArea, obj.getSwayVolume]);
             fprintf(fileID,',%s\n', cell2mat(obj.class));
             fclose(fileID);
         end
