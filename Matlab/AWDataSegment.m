@@ -303,7 +303,7 @@ classdef AWDataSegment
         function writeDataToArff(obj, fullFile)
             fileID = fopen(fullFile, 'a');
             [skew, kurt] = obj.getSkewAndKurt
-            fprintf(fileID,'%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f',[obj.getNumSteps, obj.getCadence, skew, kurt, obj.gaitVelocity, obj.getResidualStepLength,obj.getRatio,obj.getResidualStepTime,obj.getBandpower, obj.getSignalNoiseRatio, obj.getTotalHarmonicDistortion, obj.getXZSwayArea, obj.getXYSwayArea, obj.getYZSwayArea, obj.getSwayVolume]);
+            fprintf(fileID,'%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f',[obj.getNumSteps, obj.getCadence, skew, kurt, obj.gaitVelocity, obj.getResidualStepLength,obj.getRatio,obj.getResidualStepTime,obj.getBandpower, obj.getSignalNoiseRatio, obj.getTotalHarmonicDistortion, obj.getXZSwayArea, obj.getXYSwayArea, obj.getYZSwayArea, obj.getSwayVolume]);
             fprintf(fileID,',%s\n', cell2mat(obj.class));
             fclose(fileID);
         end
