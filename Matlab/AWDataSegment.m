@@ -131,7 +131,7 @@ classdef AWDataSegment
             loc = []
             for i = 1:length(pks)
                 if pks(i) > max | pks(i) < min
-                    loc = [loc pks(i)];
+                    loc = [loc i];
                 end
             end
         end
@@ -187,6 +187,7 @@ classdef AWDataSegment
             gv = cadence / stepLength;
         end
         function rsl = getResidualStepLength(obj)
+            s = obj.getNumSteps;
             asl = obj.getStepLength;
             v = obj.getGaitVelocity;
             l = obj.getStepLocations;
@@ -274,7 +275,7 @@ classdef AWDataSegment
             magNoG = mag - mean(mag);
             td = thd(magNoG);
         end
-        function fullFile = outputArff(obj)
+        function fullFile = outputArff(obj, height, weight, age, gender, pants)
             [fileName, pathName] = uiputfile({'.arff'});
             fullFile = fullfile(pathName,fileName);
             fileID = fopen(fullFile,'w');
@@ -294,16 +295,32 @@ classdef AWDataSegment
             fprintf(fileID, '@attribute xySwayArea numeric\n');
             fprintf(fileID, '@attribute yzSwayArea numeric\n');
             fprintf(fileID, '@attribute swayVolume numeric\n');
+            fprintf(fileID, '@attribute height numeric\n');
+            fprintf(fileID, '@attribute weight numeric\n');
+            fprintf(fileID, '@attribute age numeric\n');
+            fprintf(fileID, '@attribute gender {0,1,2}\n');
+            fprintf(fileID, '@attribute pants {0,1,2,3}\n');
             fprintf(fileID, '@attribute class {no_goggles, green_goggles, black_goggles, red_goggles, orange_goggles}\n');
             fprintf(fileID, '\n');
             fprintf(fileID, '@data\n');
             fclose(fileID);
-            obj.writeDataToArff(fullfile(pathName,fileName));
+            obj.writeDataToArff(fullfile(pathName,fileName), height, weight, age, gender, pants);
         end
-        function writeDataToArff(obj, fullFile)
+        function writeDataToArff(obj, fullFile, height, weight, age, gender, pants)
             fileID = fopen(fullFile, 'a');
             [skew, kurt] = obj.getSkewAndKurt
-            fprintf(fileID,'%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f',[obj.getNumSteps, obj.getCadence, skew, kurt, obj.gaitVelocity, obj.getResidualStepLength,obj.getRatio,obj.getResidualStepTime,obj.getBandpower, obj.getSignalNoiseRatio, obj.getTotalHarmonicDistortion, obj.getXZSwayArea, obj.getXYSwayArea, obj.getYZSwayArea, obj.getSwayVolume]);
+            fprintf(fileID,'%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f',[obj.getNumSteps, obj.getCadence, skew, kurt, obj.getGaitVelocity, obj.getResidualStepLength,obj.getRatio,obj.getResidualStepTime,obj.getBandpower, obj.getSignalNoiseRatio, obj.getTotalHarmonicDistortion, obj.getXZSwayArea, obj.getXYSwayArea, obj.getYZSwayArea]);
+            sVolume = obj.getSwayVolume;
+            if sVolume > 0
+                fprintf(fileID,',%f', sVolume);
+            else 
+                fprintf(fileID, ',?');
+            end
+            fprintf(fileID,',%d', height);
+            fprintf(fileID,',%f', weight);
+            fprintf(fileID,',%d', age);
+            fprintf(fileID,',%d', gender);
+            fprintf(fileID,',%d', pants);
             fprintf(fileID,',%s\n', cell2mat(obj.class));
             fclose(fileID);
         end

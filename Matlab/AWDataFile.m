@@ -43,9 +43,11 @@ classdef AWDataFile
         end
     end
     methods (Static)
-        function obj = AWDataFileFromFile()
-            [name, path] = uigetfile({'*.arff'});
-            filename = fullfile(path,name);
+        function obj = AWDataFileFromFile(filename)
+            if(nargin==0)
+                [name, path] = uigetfile({'*.arff'});
+                filename = fullfile(path,name);
+            end
             delimiter = ',';
             startRow = 10;
             timeformatSpec = '%s%[^\n\r]';
