@@ -5,9 +5,11 @@ function m = processAllFiles(filesLocation)
     file1 = files(3).name;
     h = waitbar(0,'Processing Files...');
     fileToStart = AWDataFile.AWDataFileFromFile(fullfile(filesLocation,file1));
+    fileToStart = fileToStart.removeFront(2000);
     segs = fileToStart.segmentsWithSize(500);
     for i = 1:length(segs)
         segs(i) = segs(i).removeOutliers(1).correctTimeSeconds;
+        segs(i) = segs(i).takeMovingAverage(15);
     end
     [height,weight,age,gender,pants] = getInfoForID(filename,file1);
     newFile = segs(1).outputArff(height, weight, age, gender, pants);
@@ -18,13 +20,16 @@ function m = processAllFiles(filesLocation)
     for j = 4:length(files)
         thisFile = files(j).name;
         fileToAppend = AWDataFile.AWDataFileFromFile(fullfile(filesLocation,thisFile));
+        fileToAppend = fileToAppend.removeFront(2000);
         [height,weight,age,gender,pants] = getInfoForID(filename,thisFile);
         segs = fileToAppend.segmentsWithSize(500);
         for i = 1:length(segs)
             segs(i) = segs(i).removeOutliers(1).correctTimeSeconds;
+            segs(i) = segs(i).takeMovingAverage(15);
             segs(i).writeDataToArff(newFile, height, weight, age, gender, pants);
         end
         waitbar((j-2)/(length(files)-2));
     end
     waitbar(1);
+    close(h);
 end

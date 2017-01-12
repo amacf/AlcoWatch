@@ -7,8 +7,6 @@ classdef AWDataSegment
         gx
         gy
         gz
-        gcmA
-        gcmG
         class
     end
     methods
@@ -22,8 +20,6 @@ classdef AWDataSegment
             obj.gz = gz;
             obj.class = class;
             obj = obj.removeErrors;
-            obj.gcmA = obj.gravityCorrectedMagnitudeAccel;
-            obj.gcmG = obj.gravityCorrectedMagnitudeGyro;
             obj = obj.correctTimeSeconds;
         end
         % Remove info at given indeces
@@ -86,6 +82,9 @@ classdef AWDataSegment
                 gcm(i) = gcm(i) - term2;
             end
         end
+        function gcm = gcmA(obj)
+            gcm = obj.gravityCorrectedMagnitudeAccel;
+        end
         function gcm = gravityCorrectedMagnitudeGyro(obj)
             gcm = zeros(length(obj.time), 0);
             sum = 0;
@@ -98,6 +97,9 @@ classdef AWDataSegment
                 gcm(i) = gcm(i) - term2;
             end
         end
+        function gcm = gcmG(obj)
+            gcm = obj.gravityCorrectedMagnitudeGyro;
+        end
         function obj = correctTimeSeconds(obj)
             orgTime = obj.time(1);
             if orgTime == 0
@@ -109,10 +111,22 @@ classdef AWDataSegment
             end
             obj = AWDataSegment(newTimes,obj.x,obj.y,obj.z,obj.gx,obj.gy,obj.gz,obj.class);
         end
+        function obj = correctTimeSeg(obj)
+            orgTime = obj.time(1);
+            if orgTime == 0
+                return
+            end
+            newTimes = obj.time;
+            for i = 1:length(newTimes)
+                newTimes(i) = (newTimes(i) - orgTime);
+            end
+            obj = AWDataSegment(newTimes,obj.x,obj.y,obj.z,obj.gx,obj.gy,obj.gz,obj.class);
+        end
         function steps = getNumSteps(obj)
             pks = findpeaks(obj.gcmA);
-            average = mean(obj.gcmA(:));
-            stdev = std(obj.gcmA);
+            gcmA = obj.gcmA;
+            average = mean(gcmA(:));
+            stdev = std(gcmA);
             max = average + stdev;
             min = average - stdev;
             steps = 0;
@@ -124,11 +138,12 @@ classdef AWDataSegment
         end
         function loc = getStepLocations(obj)
             pks = findpeaks(obj.gcmA);
-            average = mean(obj.gcmA(:));
-            stdev = std(obj.gcmA);
+            gcmA = obj.gcmA;
+            average = mean(gcmA(:));
+            stdev = std(gcmA);
             max = average + stdev;
             min = average - stdev;
-            loc = []
+            loc = [];
             for i = 1:length(pks)
                 if pks(i) > max | pks(i) < min
                     loc = [loc i];
@@ -137,13 +152,14 @@ classdef AWDataSegment
         end
         function cadence = getCadence(obj)
             numSteps = obj.getNumSteps;
-            cTime = obj.correctTimeSeconds.time;
+            cTime = obj.correctTimeSeg.time;
             allTime = cTime(length(cTime));
             cadence = (60 / allTime) * numSteps;
         end
         function [skew, kurt] = getSkewAndKurt(obj)
-            skew = skewness(obj.gcmA);
-            kurt = kurtosis(obj.gcmA);
+            gcmA = obj.gcmA;
+            skew = skewness(gcmA);
+            kurt = kurtosis(gcmA);
         end
         function area = getXZSwayArea(obj)
             ellipse = fit_ellipse(obj.gx, obj.gz);
@@ -158,20 +174,15 @@ classdef AWDataSegment
             area = ellipse.a * ellipse.b * pi;
         end
         function volume = getSwayVolume(obj)
-            [ellipsoidCenter, ellipsoidRadii] = ellipsoid_fit([obj.gx obj.gy obj.gz]);
-            volume = abs((4/3) * pi * ellipsoidRadii(1) * ellipsoidRadii(2) * ellipsoidRadii(3));
+            volume = calculateVolume(obj.gx,obj.gy,obj.gz);
         end
         function showAccelerationData(obj)
 %             seg = obj.correctTimeSeconds;
 %             plot(seg.time,seg.gcmA);
-            data = zeros(length(obj.time), 0);
-            for i = 1:length(obj.time)
-                data(i) = sqrt((obj.x(i))^2+(obj.y(i))^2+(obj.z(i))^2);
-            end
             plot(obj.time,obj.gcmA);
         end
         function showGyroscopeData(obj)
-            seg = obj.correctTimeSeconds;
+            seg = obj.correctTimeSeg;
             plot(seg.time,seg.gcmG);
         end
         function sl = getStepLength(obj)
@@ -214,7 +225,7 @@ classdef AWDataSegment
         end
         function r = getRatio(obj)
             sp = spectralPeaks(obj.x,obj.y,obj.z);
-            sp = sp(1:floor(end/2));
+            sp = sp(1:ceil(end/2));
 
             numSP = length(sp);
 
@@ -232,6 +243,15 @@ classdef AWDataSegment
             end
 
             r = sum(low)./sum(high);
+        end
+        function obj = takeMovingAverage(obj, n);
+            obj.time = movmean(obj.time,n);
+            obj.x = movmean(obj.x,n);
+            obj.y = movmean(obj.y,n);
+            obj.z = movmean(obj.z,n);
+            obj.gx = movmean(obj.gx,n);
+            obj.gy = movmean(obj.gy,n);
+            obj.gz = movmean(obj.gz,n);
         end
         function rst = getResidualStepTime(obj)
             s = obj.getNumSteps;
@@ -308,7 +328,7 @@ classdef AWDataSegment
         end
         function writeDataToArff(obj, fullFile, height, weight, age, gender, pants)
             fileID = fopen(fullFile, 'a');
-            [skew, kurt] = obj.getSkewAndKurt
+            [skew, kurt] = obj.getSkewAndKurt;
             fprintf(fileID,'%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f',[obj.getNumSteps, obj.getCadence, skew, kurt, obj.getGaitVelocity, obj.getResidualStepLength,obj.getRatio,obj.getResidualStepTime,obj.getBandpower, obj.getSignalNoiseRatio, obj.getTotalHarmonicDistortion, obj.getXZSwayArea, obj.getXYSwayArea, obj.getYZSwayArea]);
             sVolume = obj.getSwayVolume;
             if sVolume > 0

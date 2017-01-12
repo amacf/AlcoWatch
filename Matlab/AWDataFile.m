@@ -41,6 +41,15 @@ classdef AWDataFile
             seg = seg.correctTimeSeconds;
             plot(seg.time,seg.gcmG);
         end
+        function obj = removeFront(obj,num)
+            obj.time = obj.time(num:length(obj.time));
+            obj.x = obj.x(num:length(obj.x));
+            obj.y = obj.y(num:length(obj.y));
+            obj.z = obj.z(num:length(obj.z));
+            obj.gx = obj.gx(num:length(obj.gx));
+            obj.gy = obj.gy(num:length(obj.gy));
+            obj.gz = obj.gz(num:length(obj.gz));
+        end
     end
     methods (Static)
         function obj = AWDataFileFromFile(filename)
