@@ -10,7 +10,10 @@ classdef AWDataSegment
         class
     end
     methods
-        function obj = AWDataSegment(time,x,y,z,gx,gy,gz,class)
+        function obj = AWDataSegment(time,x,y,z,gx,gy,gz,class,skipTimeCorrection)
+            if nargin == 8
+                skipTimeCorrection = false;
+            end
             obj.time = time;
             obj.x = x;
             obj.y = y;
@@ -20,7 +23,9 @@ classdef AWDataSegment
             obj.gz = gz;
             obj.class = class;
             obj = obj.removeErrors;
-            obj = obj.correctTimeSeconds;
+            if ~skipTimeCorrection
+                obj = obj.correctTimeSeconds;
+            end
         end
         % Remove info at given indeces
         function obj = removeI(obj, i)
@@ -122,9 +127,361 @@ classdef AWDataSegment
             end
             obj = AWDataSegment(newTimes,obj.x,obj.y,obj.z,obj.gx,obj.gy,obj.gz,obj.class);
         end
+        function [fSegs,bSegs] = getForwardBackSegments(obj)
+            movAvg = obj.takeMovingAverage(25);
+            gcmA = movAvg.gcmA;
+            [maxpks,maxpksi] = findpeaks(gcmA);
+            [minpks,minpksi] = findpeaks(-1*gcmA);
+            minpks = -1 * minpks;
+            % Maxpks, minpks gauranteed to be same length
+            average = mean(gcmA(:));
+            stdev = std(gcmA);
+            max = average + stdev;
+            min = average - stdev;
+            prunedMaxi = [];
+            prunedMini = [];
+            for i = 1:length(maxpksi)
+                if maxpks(i) > max
+                    prunedMaxi = [prunedMaxi maxpksi(i)];
+                end
+            end
+            for i = 1:length(minpksi)
+                if minpks(i) < min
+                    prunedMini = [prunedMini minpksi(i)];
+                end
+            end
+            curIndex = 0;
+            if prunedMaxi(1) < prunedMini(1)
+                chooseMax = true;
+                curIndex = prunedMaxi(1);
+            else
+                chooseMax = false;
+                curIndex = prunedMini(1);
+            end
+            fSegs = [];
+            bSegs = [];
+            while curIndex > 0
+                if chooseMax
+                    nextIndex = nextSmallest(prunedMini,curIndex);
+                    if nextIndex < 0
+                        curIndex = nextIndex;
+                        break;
+                    end
+                    bSegs = [bSegs AWDataSegment(obj.time(curIndex:nextIndex),obj.x(curIndex:nextIndex), obj.y(curIndex:nextIndex),obj.z(curIndex:nextIndex),obj.gx(curIndex:nextIndex),obj.gy(curIndex:nextIndex),obj.gz(curIndex:nextIndex), obj.class,true)];
+                    curIndex = nextIndex;
+                    chooseMax = false;
+                else
+                    nextIndex = nextSmallest(prunedMaxi,curIndex);
+                    if nextIndex < 0
+                        curIndex = nextIndex;
+                        break;
+                    end
+                    fSegs = [fSegs AWDataSegment(obj.time(curIndex:nextIndex),obj.x(curIndex:nextIndex),obj.y(curIndex:nextIndex),obj.z(curIndex:nextIndex),obj.gx(curIndex:nextIndex),obj.gy(curIndex:nextIndex),obj.gz(curIndex:nextIndex),obj.class,true)];
+                    curIndex = nextIndex;
+                    chooseMax = true;
+                end
+            end
+        end
+        function [fSegs,bSegs] = getForwardBackSegmentsGyro(obj)
+            movAvg = obj.takeMovingAverage(25);
+            gcmG = movAvg.gcmG;
+            [maxpks,maxpksi] = findpeaks(gcmG);
+            [minpks,minpksi] = findpeaks(-1*gcmG);
+            minpks = -1 * minpks;
+            % Maxpks, minpks gauranteed to be same length
+            average = mean(gcmG(:));
+            stdev = std(gcmG);
+            max = average + stdev;
+            min = average - stdev;
+            prunedMaxi = [];
+            prunedMini = [];
+            for i = 1:length(maxpksi)
+                if maxpks(i) > max
+                    prunedMaxi = [prunedMaxi maxpksi(i)];
+                end
+            end
+            for i = 1:length(minpksi)
+                if minpks(i) < min
+                    prunedMini = [prunedMini minpksi(i)];
+                end
+            end
+            fSegs = [];
+            bSegs = [];
+            if isempty(prunedMini) | isempty(prunedMaxi)
+                return;
+            end
+            curIndex = 0;
+            if prunedMaxi(1) < prunedMini(1)
+                chooseMax = true;
+                curIndex = prunedMaxi(1);
+            else
+                chooseMax = false;
+                curIndex = prunedMini(1);
+            end
+            while curIndex > 0
+                if chooseMax
+                    nextIndex = nextSmallest(prunedMini,curIndex);
+                    if nextIndex < 0
+                        curIndex = nextIndex;
+                        break;
+                    end
+                    bSegs = [bSegs AWDataSegment(obj.time(curIndex:nextIndex),obj.x(curIndex:nextIndex), obj.y(curIndex:nextIndex),obj.z(curIndex:nextIndex),obj.gx(curIndex:nextIndex),obj.gy(curIndex:nextIndex),obj.gz(curIndex:nextIndex), obj.class,true)];
+                    curIndex = nextIndex;
+                    chooseMax = false;
+                else
+                    nextIndex = nextSmallest(prunedMaxi,curIndex);
+                    if nextIndex < 0
+                        curIndex = nextIndex;
+                        break;
+                    end
+                    fSegs = [fSegs AWDataSegment(obj.time(curIndex:nextIndex),obj.x(curIndex:nextIndex),obj.y(curIndex:nextIndex),obj.z(curIndex:nextIndex),obj.gx(curIndex:nextIndex),obj.gy(curIndex:nextIndex),obj.gz(curIndex:nextIndex),obj.class,true)];
+                    curIndex = nextIndex;
+                    chooseMax = true;
+                end
+            end
+        end
+        function [fmed, fvar, bmed, bvar] = getRollVelocity(obj)
+            % median and variance angular velocity about the angle of the 
+            % arm for the forward and backward stages
+            % X axis points down arm towards fingers when on left wrist
+            [fsegs, bsegs] = obj.getForwardBackSegmentsGyro;
+            frolls = [];
+            brolls = [];
+            for i = 1:length(fsegs)
+                frolls = [frolls mean(fsegs(i).gx)];
+            end
+            for i = 1:length(bsegs)
+                brolls = [brolls mean(bsegs(i).gx)];
+            end
+            fmed = median(frolls);
+            bmed = median(brolls);
+            fvar = var(frolls);
+            bvar = var(brolls);
+        end
+        function [fmed, fvar, bmed, bvar] = getPitchVelocity(obj)
+            % median and variance angular velocity about the angle of the 
+            % arm relative to the body
+            % Y axis point in direction of extended thumb
+            % This is perhaps the most interesting because you extend
+            % your arms outward (away from your body) to steady yourself
+            [fsegs, bsegs] = obj.getForwardBackSegmentsGyro;
+            frolls = [];
+            brolls = [];
+            for i = 1:length(fsegs)
+                frolls = [frolls mean(fsegs(i).gy)];
+            end
+            for i = 1:length(bsegs)
+                brolls = [brolls mean(bsegs(i).gy)];
+            end
+            fmed = median(frolls);
+            bmed = median(brolls);
+            fvar = var(frolls);
+            bvar = var(brolls);
+        end
+        function [fmed, fvar, bmed, bvar] = getYawVelocity(obj)
+            % median and variance angular velocity 
+            % Z axis points out of hand towards body
+            [fsegs, bsegs] = obj.getForwardBackSegmentsGyro;
+            frolls = [];
+            brolls = [];
+            for i = 1:length(fsegs)
+                frolls = [frolls mean(fsegs(i).gz)];
+            end
+            for i = 1:length(bsegs)
+                brolls = [brolls mean(bsegs(i).gz)];
+            end
+            fmed = median(frolls);
+            bmed = median(brolls);
+            fvar = var(frolls);
+            bvar = var(brolls);
+        end
+        function [f,b] = getRoll(obj)
+            % mean angular change about the axis of the arm in forward and backward stages
+            % x axis is axis parallel to the arm
+            [fsegs,bsegs] = obj.getForwardBackSegmentsGyro;
+            fsum = 0;
+            bsum = 0;
+            for i = 1:length(fsegs)
+                vel = mean(fsegs(i).gx);
+                roll = vel*(fsegs(i).time(length(fsegs(i).time))-fsegs(i).time(1));
+                fsum = fsum + roll;
+            end
+            for i = 1:length(bsegs)
+                vel = mean(bsegs(i).gx);
+                roll = vel*(bsegs(i).time(length(bsegs(i).time))-bsegs(i).time(1));
+                bsum = bsum + roll;
+            end
+            f = fsum/length(fsegs);
+            b = bsum/length(bsegs);
+        end
+        function [f,b] = getPitch(obj)
+            % mean angular change about the y axis of the arm in forward and backward stages
+            [fsegs,bsegs] = obj.getForwardBackSegmentsGyro;
+            fsum = 0;
+            bsum = 0;
+            for i = 1:length(fsegs)
+                vel = mean(fsegs(i).gy);
+                roll = vel*(fsegs(i).time(length(fsegs(i).time))-fsegs(i).time(1));
+                fsum = fsum + roll;
+            end
+            for i = 1:length(bsegs)
+                vel = mean(bsegs(i).gy);
+                roll = vel*(bsegs(i).time(length(bsegs(i).time))-bsegs(i).time(1));
+                bsum = bsum + roll;
+            end
+            f = fsum/length(fsegs);
+            b = bsum/length(bsegs);
+        end
+        function [f,b] = getYaw(obj)
+            % mean angular change about z axis in forward and backward stages
+            [fsegs,bsegs] = obj.getForwardBackSegmentsGyro;
+            fsum = 0;
+            bsum = 0;
+            for i = 1:length(fsegs)
+                vel = mean(fsegs(i).gz);
+                roll = vel*(fsegs(i).time(length(fsegs(i).time))-fsegs(i).time(1));
+                fsum = fsum + roll;
+            end
+            for i = 1:length(bsegs)
+                vel = mean(bsegs(i).gz);
+                roll = vel*(bsegs(i).time(length(bsegs(i).time))-bsegs(i).time(1));
+                bsum = bsum + roll;
+            end
+            f = fsum/length(fsegs);
+            b = bsum/length(bsegs);
+        end
+        function [fm,fv,bm,bv] = getZSpeed(obj)
+            % fm = mean in speed in z direction of forward swing
+            % fv = variance in speeds in z direction of forward swing
+            % bm = mean in speed in z direction of backward swing
+            % bv = variance in speeds in z direction of backward swing
+            [fsegs,bsegs] = obj.getForwardBackSegments;
+            fvels = [];
+            bvels = [];
+            for i = 1:length(fsegs)
+                fvels = [fvels trapz(fsegs(i).time,fsegs(i).z)];
+            end
+            for i = 1:length(bsegs)
+                bvels = [bvels trapz(bsegs(i).time,bsegs(i).z)];
+            end
+            fm = mean(fvels);
+            bm = mean(bvels);
+            fv = var(fvels);
+            bv = var(bvels);
+        end
+        function [fm,fv,bm,bv] = getXSpeed(obj)
+            % fm = mean in speed in x direction of forward swing
+            % fv = variance in speeds in x direction of forward swing
+            % bm = mean in speed in x direction of backward swing
+            % bv = variance in speeds in x direction of backward swing
+            [fsegs,bsegs] = obj.getForwardBackSegments;
+            fvels = [];
+            bvels = [];
+            for i = 1:length(fsegs)
+                fvels = [fvels trapz(fsegs(i).time,fsegs(i).x)];
+            end
+            for i = 1:length(bsegs)
+                bvels = [bvels trapz(bsegs(i).time,bsegs(i).x)];
+            end
+            fm = mean(fvels);
+            bm = mean(bvels);
+            fv = var(fvels);
+            bv = var(bvels);
+        end
+        function [fm,fv,bm,bv] = getYSpeed(obj)
+            % fm = mean in speed in y direction of forward swing
+            % fv = variance in speeds in y direction of forward swing
+            % bm = mean in speed in y direction of backward swing
+            % bv = variance in speeds in y direction of backward swing
+            [fsegs,bsegs] = obj.getForwardBackSegments;
+            fvels = [];
+            bvels = [];
+            for i = 1:length(fsegs)
+                fvels = [fvels trapz(fsegs(i).time,fsegs(i).y)];
+            end
+            for i = 1:length(bsegs)
+                bvels = [bvels trapz(bsegs(i).time,bsegs(i).y)];
+            end
+            fm = mean(fvels);
+            bm = mean(bvels);
+            fv = var(fvels);
+            bv = var(bvels);
+        end
+        function [f,b] = getZDist(obj)
+            % Average net z displacement of up and down segments
+            [fsegs,bsegs] = obj.getForwardBackSegments;
+            fsum = 0;
+            bsum = 0;
+            for i = 1:length(fsegs)
+                vel = trapz(fsegs(i).time,fsegs(i).z);
+                dist = vel*(fsegs(i).time(length(fsegs(i).time))-fsegs(i).time(1));
+                fsum = fsum + dist;
+            end
+            for i = 1:length(bsegs)
+                vel = trapz(bsegs(i).time,bsegs(i).z);
+                dist = vel*(bsegs(i).time(length(bsegs(i).time))-bsegs(i).time(1));
+                bsum = bsum + dist;
+            end
+            f = fsum/length(fsegs);
+            b = bsum/length(bsegs);
+        end
+        function [f,b] = getXDist(obj)
+            % Average net x displacement of up and down segments
+            [fsegs,bsegs] = obj.getForwardBackSegments;
+            fsum = 0;
+            bsum = 0;
+            for i = 1:length(fsegs)
+                vel = trapz(fsegs(i).time,fsegs(i).x);
+                dist = vel*(fsegs(i).time(length(fsegs(i).time))-fsegs(i).time(1));
+                fsum = fsum + dist;
+            end
+            for i = 1:length(bsegs)
+                vel = trapz(bsegs(i).time,bsegs(i).x);
+                dist = vel*(bsegs(i).time(length(bsegs(i).time))-bsegs(i).time(1));
+                bsum = bsum + dist;
+            end
+            f = fsum/length(fsegs);
+            b = bsum/length(bsegs);
+        end
+        function [f,b] = getDist(obj)
+            % Average net displacement of up and down segments
+            [fsegs,bsegs] = obj.getForwardBackSegments;
+            fsum = 0;
+            bsum = 0;
+            for i = 1:length(fsegs)
+                vel = trapz(fsegs(i).time,fsegs(i).gcmA);
+                dist = vel*(fsegs(i).time(length(fsegs(i).time))-fsegs(i).time(1));
+                fsum = fsum + dist;
+            end
+            for i = 1:length(bsegs)
+                vel = trapz(bsegs(i).time,bsegs(i).gcmA);
+                dist = vel*(bsegs(i).time(length(bsegs(i).time))-bsegs(i).time(1));
+                bsum = bsum + dist;
+            end
+            f = fsum/length(fsegs);
+            b = bsum/length(bsegs);
+        end
+        function [f,b] = getYDist(obj);
+            % Average net y displacement of up and down segments
+            [fsegs,bsegs] = obj.getForwardBackSegments;
+            fsum = 0;
+            bsum = 0;
+            for i = 1:length(fsegs)
+                vel = trapz(fsegs(i).time,fsegs(i).y);
+                dist = vel*(fsegs(i).time(length(fsegs(i).time))-fsegs(i).time(1));
+                fsum = fsum + dist;
+            end
+            for i = 1:length(bsegs)
+                vel = trapz(bsegs(i).time,bsegs(i).y);
+                dist = vel*(bsegs(i).time(length(bsegs(i).time))-bsegs(i).time(1));
+                bsum = bsum + dist;
+            end
+            f = fsum/length(fsegs);
+            b = bsum/length(bsegs);
+        end
         function steps = getNumSteps(obj)
-            pks = findpeaks(obj.gcmA);
             gcmA = obj.gcmA;
+            pks = findpeaks(gcmA);
             average = mean(gcmA(:));
             stdev = std(gcmA);
             max = average + stdev;
@@ -315,6 +672,44 @@ classdef AWDataSegment
             fprintf(fileID, '@attribute xySwayArea numeric\n');
             fprintf(fileID, '@attribute yzSwayArea numeric\n');
             fprintf(fileID, '@attribute swayVolume numeric\n');
+            fprintf(fileID, '@attribute distXForward numeric\n');
+            fprintf(fileID, '@attribute distXBackward numeric\n');
+            fprintf(fileID, '@attribute distYForward numeric\n');
+            fprintf(fileID, '@attribute distYBackward numeric\n');
+            fprintf(fileID, '@attribute distZForward numeric\n');
+            fprintf(fileID, '@attribute distZBackward numeric\n');
+            fprintf(fileID, '@attribute distForward numeric\n');
+            fprintf(fileID, '@attribute distBackward numeric\n');
+            fprintf(fileID, '@attribute rollVelMedianForward numeric\n');
+            fprintf(fileID, '@attribute rollVelVarianceForward numeric\n');
+            fprintf(fileID, '@attribute rollVelMedianBackward numeric\n');
+            fprintf(fileID, '@attribute rollVelVarianceBackward numeric\n');
+            fprintf(fileID, '@attribute pitchVelMedianForward numeric\n');
+            fprintf(fileID, '@attribute pitchVelVarianceForward numeric\n');
+            fprintf(fileID, '@attribute pitchVelMedianBackward numeric\n');
+            fprintf(fileID, '@attribute pitchVelVarianceBackward numeric\n');
+            fprintf(fileID, '@attribute yawVelMedianForward numeric\n');
+            fprintf(fileID, '@attribute yawVelVarianceForward numeric\n');
+            fprintf(fileID, '@attribute yawVelMedianBackward numeric\n');
+            fprintf(fileID, '@attribute yawVelVarianceBackward numeric\n');
+            fprintf(fileID, '@attribute rollForward numeric\n');
+            fprintf(fileID, '@attribute rollBackward numeric\n');
+            fprintf(fileID, '@attribute pitchForward numeric\n');
+            fprintf(fileID, '@attribute pitchBackward numeric\n');
+            fprintf(fileID, '@attribute yawForward numeric\n');
+            fprintf(fileID, '@attribute yawBackward numeric\n');
+            fprintf(fileID, '@attribute xVelMedianForward numeric\n');
+            fprintf(fileID, '@attribute xVelVarianceForward numeric\n');
+            fprintf(fileID, '@attribute xVelMedianBackward numeric\n');
+            fprintf(fileID, '@attribute xVelVarianceBackward numeric\n');
+            fprintf(fileID, '@attribute yVelMedianForward numeric\n');
+            fprintf(fileID, '@attribute yVelVarianceForward numeric\n');
+            fprintf(fileID, '@attribute yVelMedianBackward numeric\n');
+            fprintf(fileID, '@attribute yVelVarianceBackward numeric\n');
+            fprintf(fileID, '@attribute zVelMedianForward numeric\n');
+            fprintf(fileID, '@attribute zVelVarianceForward numeric\n');
+            fprintf(fileID, '@attribute zVelMedianBackward numeric\n');
+            fprintf(fileID, '@attribute zVelVarianceBackward numeric\n');
             fprintf(fileID, '@attribute height numeric\n');
             fprintf(fileID, '@attribute weight numeric\n');
             fprintf(fileID, '@attribute age numeric\n');
@@ -329,6 +724,19 @@ classdef AWDataSegment
         function writeDataToArff(obj, fullFile, height, weight, age, gender, pants)
             fileID = fopen(fullFile, 'a');
             [skew, kurt] = obj.getSkewAndKurt;
+            [distxf, distxb] = obj.getXDist;
+            [distyf, distyb] = obj.getYDist;
+            [distzf, distzb] = obj.getZDist;
+            [distf,distb] = obj.getDist;
+            [rvfmed, rvfvar, rvbmed, rvbvar] = obj.getRollVelocity;
+            [pvfmed, pvfvar, pvbmed, pvbvar] = obj.getPitchVelocity;
+            [yvfmed, yvfvar, yvbmed, yvbvar] = obj.getYawVelocity;
+            [rollf,rollb] = obj.getRoll;
+            [pitchf,pitchb] = obj.getPitch;
+            [yawf,yawb] = obj.getYaw;
+            [xspeedfm,xspeedfv,xspeedbm,xspeedbv] = obj.getXSpeed;
+            [yspeedfm,yspeedfv,yspeedbm,yspeedbv] = obj.getYSpeed;
+            [zspeedfm,zspeedfv,zspeedbm,zspeedbv] = obj.getZSpeed;
             fprintf(fileID,'%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f',[obj.getNumSteps, obj.getCadence, skew, kurt, obj.getGaitVelocity, obj.getResidualStepLength,obj.getRatio,obj.getResidualStepTime,obj.getBandpower, obj.getSignalNoiseRatio, obj.getTotalHarmonicDistortion, obj.getXZSwayArea, obj.getXYSwayArea, obj.getYZSwayArea]);
             sVolume = obj.getSwayVolume;
             if sVolume > 0
@@ -336,6 +744,44 @@ classdef AWDataSegment
             else 
                 fprintf(fileID, ',?');
             end
+            fprintf(fileID,',%f', distxf);
+            fprintf(fileID,',%f', distxb);
+            fprintf(fileID,',%f', distyf);
+            fprintf(fileID,',%f', distyb);
+            fprintf(fileID,',%f', distzf);
+            fprintf(fileID,',%f', distzb);
+            fprintf(fileID,',%f', distf);
+            fprintf(fileID,',%f', distb);
+            fprintf(fileID,',%f',rvfmed);
+            fprintf(fileID,',%f',rvfvar);
+            fprintf(fileID,',%f',rvbmed);
+            fprintf(fileID,',%f',rvbvar);
+            fprintf(fileID,',%f',pvfmed);
+            fprintf(fileID,',%f',pvfvar);
+            fprintf(fileID,',%f',pvbmed);
+            fprintf(fileID,',%f',pvbvar);
+            fprintf(fileID,',%f',yvfmed);
+            fprintf(fileID,',%f',yvfvar);
+            fprintf(fileID,',%f',yvbmed);
+            fprintf(fileID,',%f',yvbvar);
+            fprintf(fileID,',%f',rollf);
+            fprintf(fileID,',%f',rollb);
+            fprintf(fileID,',%f',pitchf);
+            fprintf(fileID,',%f',pitchb);
+            fprintf(fileID,',%f',yawf);
+            fprintf(fileID,',%f',yawb);
+            fprintf(fileID,',%f',xspeedfm);
+            fprintf(fileID,',%f',xspeedfv);
+            fprintf(fileID,',%f',xspeedbm);
+            fprintf(fileID,',%f',xspeedbv);
+            fprintf(fileID,',%f',yspeedfm);
+            fprintf(fileID,',%f',yspeedfv);
+            fprintf(fileID,',%f',yspeedbm);
+            fprintf(fileID,',%f',yspeedbv);
+            fprintf(fileID,',%f',zspeedfm);
+            fprintf(fileID,',%f',zspeedfv);
+            fprintf(fileID,',%f',zspeedbm);
+            fprintf(fileID,',%f',zspeedbv);
             fprintf(fileID,',%d', height);
             fprintf(fileID,',%f', weight);
             fprintf(fileID,',%d', age);

@@ -108,14 +108,9 @@ public class SensorService extends Service implements SensorEventListener {
         mGyroscope = mSensorManager
                 .getDefaultSensor(Sensor.TYPE_GYROSCOPE);
 
-        mRotationVector = mSensorManager
-                .getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
-
         mSensorManager.registerListener(this, mAccelerometer,
                 SensorManager.SENSOR_DELAY_FASTEST);
         mSensorManager.registerListener(this, mGyroscope,
-                SensorManager.SENSOR_DELAY_FASTEST);
-        mSensorManager.registerListener(this, mRotationVector,
                 SensorManager.SENSOR_DELAY_FASTEST);
 
         mServiceTaskType = SERVICE_TASK_TYPE_COLLECT;
