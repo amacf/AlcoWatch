@@ -45,6 +45,7 @@ classdef AWDataSegment
             gz(i) = [];
             obj = AWDataSegment(time,x,y,z,gx,gy,gz,obj.class);
         end
+        % Remove pieces of raw data that are out of order
         function obj = removeErrors(obj)
             for i = 2:length(obj.time)
                 if obj.time(i-1) > obj.time(i)
@@ -90,6 +91,9 @@ classdef AWDataSegment
         function gcm = gcmA(obj)
             gcm = obj.gravityCorrectedMagnitudeAccel;
         end
+        % Compute the gravityCorrectedMagnitude of the gyroscope
+        % Returns a list with the magnitude of gyroscope, combined in each
+        % direction
         function gcm = gravityCorrectedMagnitudeGyro(obj)
             gcm = zeros(length(obj.time), 0);
             sum = 0;
@@ -128,7 +132,7 @@ classdef AWDataSegment
             obj = AWDataSegment(newTimes,obj.x,obj.y,obj.z,obj.gx,obj.gy,obj.gz,obj.class);
         end
         function [fSegs,bSegs] = getForwardBackSegments(obj)
-            movAvg = obj.takeMovingAverage(25);
+            movAvg = obj;
             gcmA = movAvg.gcmA;
             [maxpks,maxpksi] = findpeaks(gcmA);
             [minpks,minpksi] = findpeaks(-1*gcmA);
@@ -183,7 +187,7 @@ classdef AWDataSegment
             end
         end
         function [fSegs,bSegs] = getForwardBackSegmentsGyro(obj)
-            movAvg = obj.takeMovingAverage(25);
+            movAvg = obj;
             gcmG = movAvg.gcmG;
             [maxpks,maxpksi] = findpeaks(gcmG);
             [minpks,minpksi] = findpeaks(-1*gcmG);
@@ -789,6 +793,44 @@ classdef AWDataSegment
             fprintf(fileID,',%d', pants);
             fprintf(fileID,',%s\n', cell2mat(obj.class));
             fclose(fileID);
+        end
+        % Calculate selected features and return as string
+        function outString = getSelectedFeatures(obj)
+            outString = '';
+            outString = strcat(outString,sprintf('%d,',obj.getNumSteps));
+            outString = strcat(outString,sprintf('%f,',obj.getBandpower));
+            outString = strcat(outString,sprintf('%f,',obj.getTotalHarmonicDistortion));
+            outString = strcat(outString,sprintf('%f,',obj.getBandpower));
+            outString = strcat(outString,sprintf('%f,',obj.getXZSwayArea));
+            outString = strcat(outString,sprintf('%f,',obj.getXYSwayArea));
+            outString = strcat(outString,sprintf('%f,',obj.getYZSwayArea));
+            [distyf, distyb] = obj.getYDist;
+            outString = strcat(outString,sprintf('%f,',distyf));
+            [rvfmed, rvfvar, rvbmed, rvbvar] = obj.getRollVelocity;
+            outString = strcat(outString,sprintf('%f,',rvfvar));
+            outString = strcat(outString,sprintf('%f,',rvbmed));
+            outString = strcat(outString,sprintf('%f,',rvbvar));
+            [pvfmed, pvfvar, pvbmed, pvbvar] = obj.getPitchVelocity;
+            outString = strcat(outString,sprintf('%f,',pvfmed));
+            outString = strcat(outString,sprintf('%f,',pvfvar));
+            outString = strcat(outString,sprintf('%f,',pvbmed));
+            outString = strcat(outString,sprintf('%f,',pvbvar));
+            [yvfmed, yvfvar, yvbmed, yvbvar] = obj.getYawVelocity;
+            outString = strcat(outString,sprintf('%f,',yvfmed));
+            outString = strcat(outString,sprintf('%f,',yvfvar));
+            outString = strcat(outString,sprintf('%f,',yvbmed));
+            outString = strcat(outString,sprintf('%f,',yvbvar));
+            [pitchf,pitchb] = obj.getPitch;
+            outString = strcat(outString,sprintf('%f,',pitchf));
+            outString = strcat(outString,sprintf('%f,',pitchb));
+            [yawf,yawb] = obj.getYaw;
+            outString = strcat(outString,sprintf('%f,',yawf));
+            [xspeedfm,xspeedfv,xspeedbm,xspeedbv] = obj.getXSpeed;
+            outString = strcat(outString,sprintf('%f,',xspeedbm));
+            [yspeedfm,yspeedfv,yspeedbm,yspeedbv] = obj.getYSpeed;
+            outString = strcat(outString,sprintf('%f,',yspeedfm));
+            outString = strcat(outString,sprintf('%f,',yspeedfv));
+            outString = strcat(outString,sprintf('%f',yspeedbm));
         end
     end
 end
