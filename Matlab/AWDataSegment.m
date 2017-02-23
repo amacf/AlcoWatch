@@ -605,14 +605,13 @@ classdef AWDataSegment
 
             r = sum(low)./sum(high);
         end
-        function obj = takeMovingAverage(obj, n);
-            obj.time = movmean(obj.time,n);
-            obj.x = movmean(obj.x,n);
-            obj.y = movmean(obj.y,n);
-            obj.z = movmean(obj.z,n);
-            obj.gx = movmean(obj.gx,n);
-            obj.gy = movmean(obj.gy,n);
-            obj.gz = movmean(obj.gz,n);
+        function obj = takeMovingAverage(obj, n)
+            obj.x = movingmean(obj.x,n);
+            obj.y = movingmean(obj.y,n);
+            obj.z = movingmean(obj.z,n);
+            obj.gx = movingmean(obj.gx,n);
+            obj.gy = movingmean(obj.gy,n);
+            obj.gz = movingmean(obj.gz,n);
         end
         function rst = getResidualStepTime(obj)
             s = obj.getNumSteps;
